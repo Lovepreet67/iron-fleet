@@ -1,4 +1,4 @@
-use std::usize;
+use std::{collections::HashMap, usize};
 
 use serde::{Serialize,Deserialize};
 
@@ -7,7 +7,7 @@ pub struct Message {
     src:String,
     #[serde(rename = "dest")]
     dst:String,
-    body:Body
+    body:Body 
 }
 impl Message {
     pub fn new(src:String,dst:String,body:Body)->Self{
@@ -62,5 +62,11 @@ pub enum Payload {
     Init {node_id:String,node_ids:Vec<String>},
     InitOk,
     Generate,
-    GenerateOk {id:String} 
+    GenerateOk {id:String},
+    Topology {topology:HashMap<String,Vec<String>>},  
+    TopologyOk, 
+    Broadcast {message :i32}, 
+    BroadcastOk,  
+    Read,
+    ReadOk {messages:Vec<i32>} 
 } 
