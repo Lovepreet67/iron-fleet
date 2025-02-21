@@ -1,6 +1,8 @@
-use std::{collections::HashMap, usize};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+
+use crate::node_state::NodeState;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message {
@@ -89,4 +91,9 @@ pub enum Payload {
     ReadOk {
         messages: Vec<i32>,
     },
+    // gossip to share the state to other nodes
+    Gossip {
+        received_state: NodeState,
+    },
+    GossipOk,
 }

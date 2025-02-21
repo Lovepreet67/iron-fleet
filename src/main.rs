@@ -2,6 +2,7 @@ use std::io::{self, stdin, stdout};
 pub mod message;
 pub mod message_queue;
 mod node;
+pub mod node_state;
 use message::Message;
 use message_queue::MessageQueue;
 use node::Node;

@@ -1,2 +1,4 @@
 /target
 /store
+/temp*
+/.DS_Store

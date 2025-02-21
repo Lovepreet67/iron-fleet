@@ -1,12 +1,12 @@
 use crate::{
     message::{Body, Message, Payload},
     message_queue,
+    node_state::NodeState,
 };
 use message_queue::MessageQueue;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io::Error,
-    usize,
 };
 
 #[derive(Debug)]
@@ -16,8 +16,9 @@ pub struct Node<'a> {
     generate_counter: i32,
     msg_id: usize,
     topology: HashMap<String, Vec<String>>,
-    received_broadcast_message: HashSet<i32>,
     message_queue: MessageQueue<'a>,
+    state: NodeState,
+    state_updated_count: usize,
 }
 
 impl<'a> Node<'a> {
@@ -28,14 +29,15 @@ impl<'a> Node<'a> {
             msg_id: 0,
             generate_counter: 0,
             topology: HashMap::new(),
-            received_broadcast_message: HashSet::new(),
             message_queue,
+            state: NodeState::default(),
+            state_updated_count: 0,
         }
     }
     pub fn step(&mut self, input: Message) -> Result<(), Error> {
-        match self.reply_generator(input) {
+        match self.reply_generator(&input) {
             Some(reply) => {
-                self.message_queue.add(reply.0, reply.1);
+                self.message_queue.add(reply);
                 self.message_queue.run();
                 Ok(())
             }
@@ -44,7 +46,7 @@ impl<'a> Node<'a> {
     }
 }
 
-impl<'a> Node<'a> {
+impl Node<'_> {
     fn nodes_not_reachable_from_parrent(&self, parrent: &str) -> Vec<String> {
         let mut candidates = HashSet::<String>::from_iter(self.connected_to.clone());
         candidates.remove(&self.name);
@@ -69,30 +71,32 @@ impl<'a> Node<'a> {
         }
         candidates.into_iter().collect()
     }
-    fn handle_broadcast(
-        &mut self,
-        message: i32,
-        received_from: &str,
-    ) -> Result<(), std::io::Error> {
-        if self.received_broadcast_message.contains(&message) {
-            return Ok(());
-        }
-        self.received_broadcast_message.insert(message);
-        let to_send = self.nodes_not_reachable_from_parrent(received_from);
-        for node in to_send {
-            //create a broadcast method
-            let body = Body::new(Some(self.msg_id), None, Payload::Broadcast { message });
-            let reply = Message::new(self.name.clone(), node, body);
+    fn gossip(&mut self, from: &str) {
+        // select node randomly  i will use the connected node_state
+        // randomly select 2/3 nodes which are connected to it and send messages to them not
+        let nodes = self.nodes_not_reachable_from_parrent(from);
+        for node in nodes {
+            //if random_bool(1.0/10.0)
+            //{
+            //    continue;
+            //}
+            let body = Body::new(
+                Some(self.msg_id),
+                None,
+                Payload::Gossip {
+                    received_state: self.state.clone(),
+                },
+            );
+            let message = Message::new(self.name.to_string(), node.to_string(), body);
+            self.message_queue.add(message);
             self.msg_id += 1;
-            self.message_queue.add(reply, true);
         }
         self.message_queue.run();
-        Ok(())
-        // now we send the message to the broadcast message to the node which are not reachable
-        // from parrent
     }
+}
 
-    fn reply_generator(&mut self, input: Message) -> Option<(Message, bool)> {
+impl Node<'_> {
+    fn reply_generator(&mut self, input: &Message) -> Option<Message> {
         if let Some(reply_id) = input.get_in_reply_to() {
             self.message_queue.recieved_response(reply_id);
         }
@@ -108,7 +112,7 @@ impl<'a> Node<'a> {
                     body,
                 );
                 self.msg_id += 1;
-                Some((reply, false))
+                Some(reply)
             }
             Payload::InitOk => None,
             Payload::Echo { echo } => {
@@ -122,7 +126,7 @@ impl<'a> Node<'a> {
 
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.msg_id += 1;
-                Some((reply, false))
+                Some(reply)
             }
             Payload::EchoOk { .. } => None,
             Payload::Generate => {
@@ -136,7 +140,7 @@ impl<'a> Node<'a> {
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.generate_counter += 1;
                 self.msg_id += 1;
-                Some((reply, false))
+                Some(reply)
             }
             Payload::GenerateOk { .. } => None,
             Payload::Topology { topology } => {
@@ -151,9 +155,12 @@ impl<'a> Node<'a> {
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.msg_id += 1;
-                Some((reply, false))
+                Some(reply)
             }
             Payload::Broadcast { message } => {
+                if !self.state.received_messages.contains(message) {
+                    self.state.received_messages.insert(*message);
+                }
                 let body = Body::new(
                     Some(self.msg_id),
                     input.get_message_id(),
@@ -161,10 +168,9 @@ impl<'a> Node<'a> {
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.msg_id += 1;
-                self.message_queue.add(reply, false);
-                self.handle_broadcast(*message, input.get_src()).unwrap();
-                self.message_queue.run();
-                None
+                self.state_updated_count += 1;
+                self.gossip(input.get_src());
+                Some(reply)
             }
             Payload::BroadcastOk => None,
             Payload::Read => {
@@ -172,13 +178,25 @@ impl<'a> Node<'a> {
                     Some(self.msg_id),
                     input.get_message_id(),
                     Payload::ReadOk {
-                        messages: self.received_broadcast_message.iter().cloned().collect(),
+                        messages: self.state.received_messages.iter().cloned().collect(),
                     },
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.msg_id += 1;
-                Some((reply, false))
+                Some(reply)
             }
+            Payload::Gossip { received_state } => {
+                self.state.sync(received_state);
+                let body = Body::new(
+                    Some(self.msg_id),
+                    input.get_message_id(),
+                    Payload::TopologyOk,
+                );
+                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
+                self.msg_id += 1;
+                Some(reply)
+            }
+            Payload::GossipOk => None,
             _ => None,
         }
     }
