@@ -1,4 +1,4 @@
-use std::io::{self, stdin, stdout};
+use std::io::{self, stdin};
 pub mod message;
 pub mod message_queue;
 mod node;
@@ -9,9 +9,8 @@ use node::Node;
 
 fn main() -> Result<(), io::Error> {
     let stdin = stdin().lock();
-    let stdout = stdout().lock();
     let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
-    let message_queue = MessageQueue::new(stdout); //default();
+    let message_queue = MessageQueue::default(); //default();
     let mut state = Node::new(message_queue);
     for input in inputs {
         let input = input?;

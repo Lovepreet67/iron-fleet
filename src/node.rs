@@ -10,19 +10,19 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct Node<'a> {
+pub struct Node {
     name: String,
     connected_to: Vec<String>,
     generate_counter: i32,
     msg_id: usize,
     topology: HashMap<String, Vec<String>>,
-    message_queue: MessageQueue<'a>,
+    message_queue: MessageQueue,
     state: NodeState,
     state_updated_count: usize,
 }
 
-impl<'a> Node<'a> {
-    pub fn new(message_queue: MessageQueue<'a>) -> Self {
+impl Node {
+    pub fn new(message_queue: MessageQueue) -> Self {
         Node {
             name: "no_name".to_string(),
             connected_to: vec![],
@@ -38,7 +38,6 @@ impl<'a> Node<'a> {
         match self.reply_generator(&input) {
             Some(reply) => {
                 self.message_queue.add(reply);
-                self.message_queue.run();
                 Ok(())
             }
             None => Ok(()),
@@ -46,7 +45,7 @@ impl<'a> Node<'a> {
     }
 }
 
-impl Node<'_> {
+impl Node {
     fn nodes_not_reachable_from_parrent(&self, parrent: &str) -> Vec<String> {
         let mut candidates = HashSet::<String>::from_iter(self.connected_to.clone());
         candidates.remove(&self.name);
@@ -72,14 +71,8 @@ impl Node<'_> {
         candidates.into_iter().collect()
     }
     fn gossip(&mut self, from: &str) {
-        // select node randomly  i will use the connected node_state
-        // randomly select 2/3 nodes which are connected to it and send messages to them not
         let nodes = self.nodes_not_reachable_from_parrent(from);
         for node in nodes {
-            //if random_bool(1.0/10.0)
-            //{
-            //    continue;
-            //}
             let body = Body::new(
                 Some(self.msg_id),
                 None,
@@ -91,17 +84,15 @@ impl Node<'_> {
             self.message_queue.add(message);
             self.msg_id += 1;
         }
-        self.message_queue.run();
     }
 }
 
-impl Node<'_> {
+impl Node {
     fn reply_generator(&mut self, input: &Message) -> Option<Message> {
         if let Some(reply_id) = input.get_in_reply_to() {
             self.message_queue.recieved_response(reply_id);
         }
         match input.get_payload() {
-            // we can handle the Ok type message
             Payload::Init { node_id, node_ids } => {
                 self.name = node_id.to_string();
                 self.connected_to.clone_from(node_ids);
