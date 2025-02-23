@@ -89,11 +89,17 @@ pub enum Payload {
     BroadcastOk,
     Read,
     ReadOk {
-        messages: Vec<i32>,
+        //messages: Vec<i32>, 
+        value: i32 
     },
     // gossip to share the state to other nodes
     Gossip {
         received_state: NodeState,
     },
     GossipOk,
+    Add {
+        delta:i32
+    }, 
+    AddOk
+
 }

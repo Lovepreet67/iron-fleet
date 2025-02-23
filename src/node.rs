@@ -6,7 +6,7 @@ use crate::{
 use message_queue::MessageQueue;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
-    io::Error,
+    io::{stderr, Error, Stderr, Write},
 };
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub struct Node {
     topology: HashMap<String, Vec<String>>,
     message_queue: MessageQueue,
     state: NodeState,
-    state_updated_count: usize,
+    add_msg_id:i32 
 }
 
 impl Node {
@@ -31,7 +31,7 @@ impl Node {
             topology: HashMap::new(),
             message_queue,
             state: NodeState::default(),
-            state_updated_count: 0,
+            add_msg_id:0 
         }
     }
     pub fn step(&mut self, input: Message) -> Result<(), Error> {
@@ -84,7 +84,7 @@ impl Node {
             self.message_queue.add(message);
             self.msg_id += 1;
         }
-    }
+    } 
 }
 
 impl Node {
@@ -148,33 +148,49 @@ impl Node {
                 self.msg_id += 1;
                 Some(reply)
             }
-            Payload::Broadcast { message } => {
-                if !self.state.received_messages.contains(message) {
-                    self.state.received_messages.insert(*message);
-                }
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::BroadcastOk,
-                );
-                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
-                self.msg_id += 1;
-                self.state_updated_count += 1;
-                self.gossip(input.get_src());
-                Some(reply)
+            Payload::Broadcast { message:_ } => {
+                None  
+                //if !self.state.received_messages.contains(message) {
+                //    self.state.received_messages.insert(message);
+                //}
+                //let body = Body::new(
+                //    Some(self.msg_id),
+                //    input.get_message_id(),
+                //    Payload::BroadcastOk,
+                //);
+                //let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
+                //self.msg_id += 1;
+                //self.gossip(input.get_src());
+                //Some(reply)
             }
             Payload::BroadcastOk => None,
             Payload::Read => {
-                let body = Body::new(
+                    let body = Body::new(
                     Some(self.msg_id),
                     input.get_message_id(),
                     Payload::ReadOk {
-                        messages: self.state.received_messages.iter().cloned().collect(),
+                        value:self.state.current_counter 
                     },
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.msg_id += 1;
                 Some(reply)
+
+            }
+            Payload::Add { delta }=>{
+                //eprintln!("recieved value to add {}",delta);  
+                //we will add this message to the nodes state
+                if delta > &0  {
+                    let to_store = format!("{}_{}_{}",self.name,self.add_msg_id,delta);
+                    self.state.received_messages.insert(to_store);
+                    self.state.current_counter+=delta; 
+                self.add_msg_id+=1;  
+                self.gossip(input.get_src()); 
+                }
+                let body = Body::new(Some(self.msg_id), input.get_message_id(), Payload::AddOk);
+                let reply = Message::new(self.name.to_string(),input.get_src().to_string(), body);
+                self.msg_id+=1; 
+                Some(reply)  
             }
             Payload::Gossip { received_state } => {
                 self.state.sync(received_state);
