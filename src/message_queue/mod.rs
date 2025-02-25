@@ -9,7 +9,7 @@ enum Event {
     SendSure { message: Message },
     Received { msg_id: usize },
     Flush,
-    None 
+    None,
 }
 
 #[derive(Debug)]
@@ -22,24 +22,21 @@ impl Default for MessageQueue {
         let (tx, rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
             let mut queue = VecDeque::<Message>::new();
-            let mut gossip_queue = VecDeque::<Message>::new(); 
+            let mut gossip_queue = VecDeque::<Message>::new();
             let mut writer = stdout().lock();
             let mut to_check = HashSet::<usize>::new();
             let mut reply_ids = HashSet::<usize>::new();
             let mut last_gossiped = Instant::now();
             loop {
                 let event = match rx.try_recv() {
-                    Ok(event)=> 
-                        event, 
-                    Err(_)=>
-                        Event::None,  
-                };                  
+                    Ok(event) => event,
+                    Err(_) => Event::None,
+                };
                 match event {
                     Event::Send { message } => {
-                        if let Payload::Gossip {received_state:_} = message.get_payload(){
-                            gossip_queue.push_back(message); 
-                        } 
-                        else {
+                        if let Payload::Gossip { received_state: _ } = message.get_payload() {
+                            gossip_queue.push_back(message);
+                        } else {
                             queue.push_back(message);
                         }
                     }
@@ -55,10 +52,10 @@ impl Default for MessageQueue {
                     Event::Flush => {
                         // send all the message in queue by default we just have to make the gossip
                         // messages to flush, we can do that by seting the last_gossiped time in
-                        // past 
-                        last_gossiped = Instant::now() - Duration::from_secs(10); 
-                    } 
-                    Event::None =>{
+                        // past
+                        last_gossiped = Instant::now() - Duration::from_secs(10);
+                    }
+                    Event::None => {
                         // do nothing
                     }
                 }
@@ -67,7 +64,7 @@ impl Default for MessageQueue {
                 let mut size = queue.len();
                 while size > 0 {
                     size -= 1;
-                    if let Some(message) = queue.pop_front() { 
+                    if let Some(message) = queue.pop_front() {
                         if let Some(msg_id) = message.get_message_id() {
                             if reply_ids.contains(&msg_id) {
                                 reply_ids.remove(&msg_id);
@@ -87,27 +84,25 @@ impl Default for MessageQueue {
                         }
                     }
                 }
-                // this will gossip ony after 50 miliseconds 
+                // this will gossip ony after 50 miliseconds
                 // now we will check of we have gossiped small time before
-                if last_gossiped.elapsed() > Duration::from_millis(500)           
-                {
-                    let mut already_sent_latest_to = HashSet::<String>::new(); 
-                    while let Some(message)  = gossip_queue.pop_back() {
-                        if already_sent_latest_to.contains(message.get_dst())
-                        {
+                if last_gossiped.elapsed() > Duration::from_millis(500) {
+                    let mut already_sent_latest_to = HashSet::<String>::new();
+                    while let Some(message) = gossip_queue.pop_back() {
+                        if already_sent_latest_to.contains(message.get_dst()) {
                             continue;
                         }
-                        already_sent_latest_to.insert(message.get_dst().to_string()); 
+                        already_sent_latest_to.insert(message.get_dst().to_string());
                         serde_json::to_writer(&mut writer, &message)
                             .expect("error while writing the message to stdout");
                         writer
                             .write_all(b"\n")
                             .expect("error while writing new line");
                     }
-                    last_gossiped = Instant::now(); 
+                    last_gossiped = Instant::now();
                 }
-        }
-    }); 
+            }
+        });
 
         MessageQueue { sender: tx }
     }

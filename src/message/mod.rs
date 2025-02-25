@@ -75,25 +75,37 @@ pub enum Payload {
         node_ids: Vec<String>,
     },
     InitOk,
-    Generate,
-    GenerateOk {
-        id: String,
-    },
     Topology {
         topology: HashMap<String, Vec<String>>,
     },
     TopologyOk,
-    Broadcast {
-        message: i32,
-    },
-    BroadcastOk,
-    Read,
-    ReadOk {
-        messages: Vec<i32>,
-    },
     // gossip to share the state to other nodes
     Gossip {
         received_state: NodeState,
     },
     GossipOk,
+    // for kafka
+    Send {
+        key: String,
+        msg: i32,
+    },
+    SendOk {
+        offset: usize,
+    },
+    Poll {
+        offsets: HashMap<String, usize>,
+    },
+    PollOk {
+        msgs: HashMap<String, Vec<Vec<i32>>>,
+    },
+    CommitOffsets {
+        offsets: HashMap<String, usize>,
+    },
+    CommitOffsetsOk,
+    ListCommittedOffsets {
+        keys: Vec<String>,
+    },
+    ListCommittedOffsetsOk {
+        offsets: HashMap<String, usize>,
+    },
 }

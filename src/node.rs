@@ -13,12 +13,10 @@ use std::{
 pub struct Node {
     name: String,
     connected_to: Vec<String>,
-    generate_counter: i32,
     msg_id: usize,
     topology: HashMap<String, Vec<String>>,
     message_queue: MessageQueue,
     state: NodeState,
-    state_updated_count: usize,
 }
 
 impl Node {
@@ -27,11 +25,9 @@ impl Node {
             name: "no_name".to_string(),
             connected_to: vec![],
             msg_id: 0,
-            generate_counter: 0,
             topology: HashMap::new(),
             message_queue,
             state: NodeState::default(),
-            state_updated_count: 0,
         }
     }
     pub fn step(&mut self, input: Message) -> Result<(), Error> {
@@ -89,6 +85,8 @@ impl Node {
 
 impl Node {
     fn reply_generator(&mut self, input: &Message) -> Option<Message> {
+        eprintln!("recieved message from : {:?}", input.get_src());
+        eprintln!("recieved message : {:?}", input);
         if let Some(reply_id) = input.get_in_reply_to() {
             self.message_queue.recieved_response(reply_id);
         }
@@ -120,20 +118,6 @@ impl Node {
                 Some(reply)
             }
             Payload::EchoOk { .. } => None,
-            Payload::Generate => {
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::GenerateOk {
-                        id: format!("{}_{}", self.name, self.generate_counter),
-                    },
-                );
-                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
-                self.generate_counter += 1;
-                self.msg_id += 1;
-                Some(reply)
-            }
-            Payload::GenerateOk { .. } => None,
             Payload::Topology { topology } => {
                 for enteries in topology.iter() {
                     self.topology
@@ -143,34 +127,6 @@ impl Node {
                     Some(self.msg_id),
                     input.get_message_id(),
                     Payload::TopologyOk,
-                );
-                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
-                self.msg_id += 1;
-                Some(reply)
-            }
-            Payload::Broadcast { message } => {
-                if !self.state.received_messages.contains(message) {
-                    self.state.received_messages.insert(*message);
-                }
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::BroadcastOk,
-                );
-                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
-                self.msg_id += 1;
-                self.state_updated_count += 1;
-                self.gossip(input.get_src());
-                Some(reply)
-            }
-            Payload::BroadcastOk => None,
-            Payload::Read => {
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::ReadOk {
-                        messages: self.state.received_messages.iter().cloned().collect(),
-                    },
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
                 self.msg_id += 1;
@@ -187,6 +143,55 @@ impl Node {
                 self.msg_id += 1;
                 Some(reply)
             }
+            Payload::Send { key, msg } => {
+                let body = Body::new(
+                    Some(self.msg_id),
+                    input.get_message_id(),
+                    Payload::SendOk {
+                        offset: self.state.add_message(key, *msg),
+                    },
+                );
+                let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
+                self.msg_id += 1;
+                Some(reply)
+            }
+            Payload::SendOk { offset: _ } => None,
+            Payload::Poll { offsets } => {
+                let body = Body::new(
+                    Some(self.msg_id),
+                    input.get_message_id(),
+                    Payload::PollOk {
+                        msgs: self.state.poll(offsets),
+                    },
+                );
+                let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
+                Some(reply)
+            }
+            Payload::PollOk { msgs: _ } => None,
+            Payload::CommitOffsets { offsets } => {
+                self.state.commit_offsets(input.get_src(), offsets);
+                let body = Body::new(
+                    Some(self.msg_id),
+                    input.get_message_id(),
+                    Payload::CommitOffsetsOk,
+                );
+                let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
+                Some(reply)
+            }
+            Payload::CommitOffsetsOk => None,
+            Payload::ListCommittedOffsets { keys } => {
+                let body = Body::new(
+                    Some(self.msg_id),
+                    input.get_message_id(),
+                    Payload::ListCommittedOffsetsOk {
+                        offsets: self.state.get_offsets(input.get_src(), keys),
+                    },
+                );
+                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
+                Some(reply)
+            }
+            Payload::ListCommittedOffsetsOk { offsets: _ } => None,
+
             Payload::GossipOk => None,
             _ => None,
         }
