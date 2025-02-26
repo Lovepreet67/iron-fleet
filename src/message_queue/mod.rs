@@ -16,6 +16,13 @@ enum Event {
 pub struct MessageQueue {
     sender: std::sync::mpsc::Sender<Event>,
 }
+impl Clone for MessageQueue {
+    fn clone(&self) -> Self {
+        MessageQueue {
+            sender: self.sender.clone(),
+        }
+    }
+}
 
 impl Default for MessageQueue {
     fn default() -> Self {
@@ -86,7 +93,7 @@ impl Default for MessageQueue {
                 }
                 // this will gossip ony after 50 miliseconds
                 // now we will check of we have gossiped small time before
-                if last_gossiped.elapsed() > Duration::from_millis(500) {
+                if last_gossiped.elapsed() > Duration::from_millis(50) {
                     let mut already_sent_latest_to = HashSet::<String>::new();
                     while let Some(message) = gossip_queue.pop_back() {
                         if already_sent_latest_to.contains(message.get_dst()) {
@@ -109,17 +116,17 @@ impl Default for MessageQueue {
 }
 
 impl MessageQueue {
-    pub fn add(&mut self, message: Message) {
+    pub fn add(&self, message: Message) {
         self.sender
             .send(Event::Send { message })
             .expect("error while adding new message to queue");
     }
-    pub fn add_and_check(&mut self, message: Message) {
+    pub fn add_and_check(&self, message: Message) {
         self.sender
             .send(Event::SendSure { message })
             .expect("error while sending msgsure");
     }
-    pub fn recieved_response(&mut self, msg_id: usize) {
+    pub fn recieved_response(&self, msg_id: usize) {
         self.sender
             .send(Event::Received { msg_id })
             .expect("error while sending addin gthe received response");

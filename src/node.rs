@@ -1,4 +1,5 @@
 use crate::{
+    link_kv::LinkKv,
     message::{Body, Message, Payload},
     message_queue,
     node_state::NodeState,
@@ -16,11 +17,12 @@ pub struct Node {
     msg_id: usize,
     topology: HashMap<String, Vec<String>>,
     message_queue: MessageQueue,
+    key_value_store: LinkKv,
     state: NodeState,
 }
 
 impl Node {
-    pub fn new(message_queue: MessageQueue) -> Self {
+    pub fn new(message_queue: MessageQueue, key_value_store: LinkKv) -> Self {
         Node {
             name: "no_name".to_string(),
             connected_to: vec![],
@@ -28,6 +30,7 @@ impl Node {
             topology: HashMap::new(),
             message_queue,
             state: NodeState::default(),
+            key_value_store,
         }
     }
     pub fn step(&mut self, input: Message) -> Result<(), Error> {
@@ -77,6 +80,8 @@ impl Node {
                 },
             );
             let message = Message::new(self.name.to_string(), node.to_string(), body);
+            eprintln!("sending a gossip method");
+            eprintln!("{:?}",message);  
             self.message_queue.add(message);
             self.msg_id += 1;
         }
@@ -101,6 +106,7 @@ impl Node {
                     body,
                 );
                 self.msg_id += 1;
+                self.key_value_store.set_node_name(node_id.to_string());
                 Some(reply)
             }
             Payload::InitOk => None,
@@ -140,6 +146,7 @@ impl Node {
                     Payload::TopologyOk,
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
+                self.gossip(input.get_src()); 
                 self.msg_id += 1;
                 Some(reply)
             }
@@ -148,10 +155,11 @@ impl Node {
                     Some(self.msg_id),
                     input.get_message_id(),
                     Payload::SendOk {
-                        offset: self.state.add_message(key, *msg),
+                        offset: self.state.add_message(key, *msg, &self.key_value_store),
                     },
                 );
                 let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
+                self.gossip(input.get_src()); 
                 self.msg_id += 1;
                 Some(reply)
             }
@@ -176,6 +184,7 @@ impl Node {
                     Payload::CommitOffsetsOk,
                 );
                 let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
+                self.gossip(input.get_src()); 
                 Some(reply)
             }
             Payload::CommitOffsetsOk => None,

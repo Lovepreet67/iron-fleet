@@ -1,20 +1,21 @@
-use std::{
-    cmp::max,
-    collections::{BTreeMap, HashMap},
-};
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
+
+use crate::link_kv::{LinkKVResponse, LinkKv};
+
+
+// for custom serielization and deserialization
+ 
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Topic {
     pub committed_offset: HashMap<String, usize>,
-    pub offset: usize,
-    pub messages: BTreeMap<usize, i32>,
-}
+    pub messages: BTreeMap<usize, i32>, 
+} 
 impl Topic {
-    pub fn new(offset: usize, committed_offset: HashMap<String, usize>) -> Self {
-        Topic {
-            offset,
+    pub fn new(committed_offset: HashMap<String, usize>) -> Self {
+        Topic { 
             messages: BTreeMap::new(),
             committed_offset,
         }
@@ -24,6 +25,33 @@ impl Topic {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct NodeState {
     topics: HashMap<String, Topic>,
+}
+
+fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {  
+    loop {
+        // first we will try to get the offset
+        match key_value_store.get(key.to_string()) {
+            LinkKVResponse::Value(curr_offset) => {
+                match key_value_store.compare_and_set(key.to_string(), curr_offset, curr_offset + 1)
+                {
+                    LinkKVResponse::Success => {
+                        // if this is success ww have secured the index and now we can use it
+                        return curr_offset + 1; 
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
+            LinkKVResponse::KeyNotFound => {
+                key_value_store.set(key.to_string(), 0);
+                return 0;  
+            }
+            _ => {
+                continue;
+            }
+        }
+    }
 }
 
 impl NodeState {
@@ -37,26 +65,25 @@ impl NodeState {
                     .committed_offset
                     .insert(sender.to_string(), *topic.1);
                 //curr_topic.committed_offset = Some(*topic.1);
-                curr_topic.offset = max(*topic.1 + 1, curr_topic.offset);
             }
         }
         eprintln!("after commiting : {:?}", self);
     }
-    pub fn add_message(&mut self, key: &str, value: i32) -> usize {
+    pub fn add_message(&mut self, key: &str, value: i32, key_value_store: &LinkKv) -> usize {
         eprintln!("request to add message in topic  {} : {}", key, value);
+        let valid_offset = get_valid_offset(key, key_value_store);
+        // first we will get the offset from the for the value
         if let Some(curr_topic) = self.topics.get_mut(key) {
-            curr_topic.offset += 1;
-            curr_topic.messages.insert(curr_topic.offset, value);
+            curr_topic.messages.insert(valid_offset, value);
             eprintln!("after adding message : {:?}", curr_topic);
-            curr_topic.offset
         } else {
             // topic is not present in the state so we create new
-            let mut topic = Topic::new(0, HashMap::new());
-            topic.messages.insert(topic.offset, value);
+            let mut topic = Topic::new(HashMap::new());
+            topic.messages.insert(valid_offset, value); 
             self.topics.insert(key.to_string(), topic);
             eprintln!("after adding the message : {:?}", self);
-            0
         }
+        valid_offset 
     }
     pub fn poll(&self, offsets: &HashMap<String, usize>) -> HashMap<String, Vec<Vec<i32>>> {
         let mut result = HashMap::<String, Vec<Vec<i32>>>::new();
@@ -106,13 +133,6 @@ impl NodeState {
         for topic in &received_state.topics {
             // of the topic is already present we wil update the value of topic
             if let Some(curr_topic) = self.topics.get_mut(topic.0) {
-                // if we will have lower offset then we should update the offset otherwise we will
-                // continue since we have latest offset commit for this topic
-                if curr_topic.offset < topic.1.offset {
-                    curr_topic.offset = topic.1.offset;
-                    // removing the messages which are already commited
-                    curr_topic.messages.retain(|&key, _| key > topic.1.offset);
-                }
                 // we will sync the messages
                 for message in &topic.1.messages {
                     // if we have message we don't need to add message
@@ -121,7 +141,6 @@ impl NodeState {
                     }
                     curr_topic.messages.insert(*message.0, *message.1);
                 }
-
                 // syncing the commited offset
                 for commited_offset in &topic.1.committed_offset {
                     if let Some(curr_commited_offset) =

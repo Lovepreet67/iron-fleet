@@ -108,4 +108,26 @@ pub enum Payload {
     ListCommittedOffsetsOk {
         offsets: HashMap<String, usize>,
     },
+    // for lin-kv
+    Read {
+        key: String,
+    },
+    ReadOk {
+        value: usize,
+    },
+    Write {
+        key: String,
+        value: usize,
+    },
+    WriteOk,
+    Cas {
+        key: String,
+        from: usize,
+        to: usize,
+    },
+    CasOk,
+    Error {
+        code: usize,
+        text: String,
+    },
 }

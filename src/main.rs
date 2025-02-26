@@ -1,20 +1,82 @@
-use std::io::{self, stdin};
+use std::{
+    io::{self, stdin, BufRead},
+    sync::mpsc,
+    thread,
+};
+pub mod input_queue;
+pub mod link_kv;
 pub mod message;
 pub mod message_queue;
 mod node;
 pub mod node_state;
+use link_kv::LinkKv;
 use message::Message;
 use message_queue::MessageQueue;
 use node::Node;
 
 fn main() -> Result<(), io::Error> {
-    let stdin = stdin().lock();
-    let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
+    let (link_kv_sender, link_kv_reciever) = mpsc::channel::<Message>();
+    let (main_sender, main_reciever) = mpsc::channel::<Message>();
+    // creating a main thread
+    thread::spawn(move || {
+        let stdin = stdin().lock();
+        for line in stdin.lines() {
+            match line {
+                Ok(text) => {
+                    eprintln!("{}", text);
+                    match serde_json::from_str::<Message>(&text) {
+                        Ok(message) => {
+                            match message.get_src() {
+                                "lin-kv" => {
+                                    // this message will go to the lin_kv thread
+                                    link_kv_sender
+                                        .send(message)
+                                        .expect("error while sending message to lin-kv");
+                                }
+                                _ => {
+                                    // otherwise it goes to the main thread
+                                    main_sender
+                                        .send(message)
+                                        .expect("error while sending message to main thread");
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("Invalid JSON: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("Error reading line: {}", e),
+            }
+        }
+        //let messages = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
+        //for message in messages {
+        //    // here we will seprat the messages for main and lin-kv
+        //    let message = message.expect("error while trying to parse message");
+        //    match message.get_src() {
+        //        "lin-kv" => {
+        //            // this message will go to the lin_kv thread
+        //            link_kv_sender
+        //                .send(message)
+        //                .expect("error while sending message to lin-kv");
+        //        }
+        //        _ => {
+        //            // otherwise it goes to the main thread
+        //            main_sender
+        //                .send(message)
+        //                .expect("error while sending message to main thread");
+        //        }
+        //    }
+        //}
+    });
+
+    // creating a link kv store
+
     let message_queue = MessageQueue::default(); //default();
-    let mut state = Node::new(message_queue);
-    for input in inputs {
-        let input = input?;
-        state.step(input)?;
+    let key_value_store = LinkKv::new(link_kv_reciever, message_queue.clone());
+    let mut state = Node::new(message_queue, key_value_store);
+    loop {
+        let message = main_reciever
+            .recv()
+            .expect("error while recieving the message to main thread");
+        state.step(message)?;
     }
-    Ok(())
 }
