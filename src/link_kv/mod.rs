@@ -58,7 +58,6 @@ impl LinkKv {
         let body = Body::new(None, None, Payload::Write { key, value });
         let message = Message::new(self.node_name.clone(), "lin-kv".to_string(), body);
         self.message_queue.add(message);
-        eprintln!("wating write ok");
         let _ = self
             .link_kv_receiver
             .recv()

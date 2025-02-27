@@ -1,21 +1,22 @@
 use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
 use crate::link_kv::{LinkKVResponse, LinkKv};
 
-
 // for custom serielization and deserialization
- 
 
+#[serde_as]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Topic {
     pub committed_offset: HashMap<String, usize>,
-    pub messages: BTreeMap<usize, i32>, 
-} 
+    #[serde_as(as = "BTreeMap<DisplayFromStr,_>")]
+    pub messages: BTreeMap<usize, i32>,
+}
 impl Topic {
     pub fn new(committed_offset: HashMap<String, usize>) -> Self {
-        Topic { 
+        Topic {
             messages: BTreeMap::new(),
             committed_offset,
         }
@@ -27,7 +28,7 @@ pub struct NodeState {
     topics: HashMap<String, Topic>,
 }
 
-fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {  
+fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {
     loop {
         // first we will try to get the offset
         match key_value_store.get(key.to_string()) {
@@ -36,7 +37,7 @@ fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {
                 {
                     LinkKVResponse::Success => {
                         // if this is success ww have secured the index and now we can use it
-                        return curr_offset + 1; 
+                        return curr_offset + 1;
                     }
                     _ => {
                         continue;
@@ -45,7 +46,7 @@ fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {
             }
             LinkKVResponse::KeyNotFound => {
                 key_value_store.set(key.to_string(), 0);
-                return 0;  
+                return 0;
             }
             _ => {
                 continue;
@@ -56,8 +57,6 @@ fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {
 
 impl NodeState {
     pub fn commit_offsets(&mut self, sender: &str, offsets: &HashMap<String, usize>) {
-        eprintln!("commiting offset recieved value : {:?}", offsets);
-        eprintln!("before commiting {:?}", self);
         for topic in offsets {
             if let Some(curr_topic) = self.topics.get_mut(topic.0) {
                 //curr_topic.messages.retain(|&key,_| key>*topic.1);
@@ -67,23 +66,19 @@ impl NodeState {
                 //curr_topic.committed_offset = Some(*topic.1);
             }
         }
-        eprintln!("after commiting : {:?}", self);
     }
     pub fn add_message(&mut self, key: &str, value: i32, key_value_store: &LinkKv) -> usize {
-        eprintln!("request to add message in topic  {} : {}", key, value);
         let valid_offset = get_valid_offset(key, key_value_store);
         // first we will get the offset from the for the value
         if let Some(curr_topic) = self.topics.get_mut(key) {
             curr_topic.messages.insert(valid_offset, value);
-            eprintln!("after adding message : {:?}", curr_topic);
         } else {
             // topic is not present in the state so we create new
             let mut topic = Topic::new(HashMap::new());
-            topic.messages.insert(valid_offset, value); 
+            topic.messages.insert(valid_offset, value);
             self.topics.insert(key.to_string(), topic);
-            eprintln!("after adding the message : {:?}", self);
         }
-        valid_offset 
+        valid_offset
     }
     pub fn poll(&self, offsets: &HashMap<String, usize>) -> HashMap<String, Vec<Vec<i32>>> {
         let mut result = HashMap::<String, Vec<Vec<i32>>>::new();
@@ -105,9 +100,6 @@ impl NodeState {
             }
             result.insert(topic.0.to_string(), to_send);
         }
-        eprintln!("poll with param : {:?}", offsets);
-        eprintln!("state : {:?}", self);
-        eprintln!("polled value {:?}", result);
         result
     }
     pub fn get_offsets(&self, sender: &str, keys: &Vec<String>) -> HashMap<String, usize> {
@@ -119,10 +111,6 @@ impl NodeState {
                 }
             }
         }
-        eprintln!("get_offsets with param : {:?}", keys);
-        eprintln!("state : {:?}", self);
-        eprintln!("ofsets value {:?}", result);
-
         result
     }
 }

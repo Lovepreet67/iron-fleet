@@ -80,8 +80,6 @@ impl Node {
                 },
             );
             let message = Message::new(self.name.to_string(), node.to_string(), body);
-            eprintln!("sending a gossip method");
-            eprintln!("{:?}",message);  
             self.message_queue.add(message);
             self.msg_id += 1;
         }
@@ -90,8 +88,6 @@ impl Node {
 
 impl Node {
     fn reply_generator(&mut self, input: &Message) -> Option<Message> {
-        eprintln!("recieved message from : {:?}", input.get_src());
-        eprintln!("recieved message : {:?}", input);
         if let Some(reply_id) = input.get_in_reply_to() {
             self.message_queue.recieved_response(reply_id);
         }
@@ -139,6 +135,7 @@ impl Node {
                 Some(reply)
             }
             Payload::Gossip { received_state } => {
+                eprintln!("recieved a gossip message : {:?}",input); 
                 self.state.sync(received_state);
                 let body = Body::new(
                     Some(self.msg_id),
@@ -146,7 +143,7 @@ impl Node {
                     Payload::TopologyOk,
                 );
                 let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
-                self.gossip(input.get_src()); 
+                self.gossip(input.get_src());
                 self.msg_id += 1;
                 Some(reply)
             }
@@ -159,7 +156,7 @@ impl Node {
                     },
                 );
                 let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
-                self.gossip(input.get_src()); 
+                self.gossip(input.get_src());
                 self.msg_id += 1;
                 Some(reply)
             }
@@ -184,7 +181,7 @@ impl Node {
                     Payload::CommitOffsetsOk,
                 );
                 let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
-                self.gossip(input.get_src()); 
+                self.gossip(input.get_src());
                 Some(reply)
             }
             Payload::CommitOffsetsOk => None,

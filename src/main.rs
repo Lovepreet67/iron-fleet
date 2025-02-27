@@ -20,52 +20,26 @@ fn main() -> Result<(), io::Error> {
     // creating a main thread
     thread::spawn(move || {
         let stdin = stdin().lock();
-        for line in stdin.lines() {
-            match line {
-                Ok(text) => {
-                    eprintln!("{}", text);
-                    match serde_json::from_str::<Message>(&text) {
-                        Ok(message) => {
-                            match message.get_src() {
-                                "lin-kv" => {
-                                    // this message will go to the lin_kv thread
-                                    link_kv_sender
-                                        .send(message)
-                                        .expect("error while sending message to lin-kv");
-                                }
-                                _ => {
-                                    // otherwise it goes to the main thread
-                                    main_sender
-                                        .send(message)
-                                        .expect("error while sending message to main thread");
-                                }
-                            }
-                        }
-                        Err(e) => eprintln!("Invalid JSON: {}", e),
-                    }
+        let messages = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
+        for message in messages {
+            // here we will seprat the messages for main and lin-kv
+            let message = message.expect("error while trying to parse message");
+            match message.get_src() {
+                "lin-kv" => {
+                    eprintln!("{:?}",message); 
+                    // this message will go to the lin_kv thread
+                    link_kv_sender
+                        .send(message)
+                        .expect("error while sending message to lin-kv");
                 }
-                Err(e) => eprintln!("Error reading line: {}", e),
+                _ => {
+                    // otherwise it goes to the main thread
+                    main_sender
+                        .send(message)
+                        .expect("error while sending message to main thread");
+                }
             }
         }
-        //let messages = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
-        //for message in messages {
-        //    // here we will seprat the messages for main and lin-kv
-        //    let message = message.expect("error while trying to parse message");
-        //    match message.get_src() {
-        //        "lin-kv" => {
-        //            // this message will go to the lin_kv thread
-        //            link_kv_sender
-        //                .send(message)
-        //                .expect("error while sending message to lin-kv");
-        //        }
-        //        _ => {
-        //            // otherwise it goes to the main thread
-        //            main_sender
-        //                .send(message)
-        //                .expect("error while sending message to main thread");
-        //        }
-        //    }
-        //}
     });
 
     // creating a link kv store
