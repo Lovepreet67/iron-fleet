@@ -9,7 +9,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     io::Error,
 };
-
+ 
 #[derive(Debug)]
 pub struct Node {
     name: String,
@@ -135,7 +135,6 @@ impl Node {
                 Some(reply)
             }
             Payload::Gossip { received_state } => {
-                eprintln!("recieved a gossip message : {:?}",input); 
                 self.state.sync(received_state);
                 let body = Body::new(
                     Some(self.msg_id),
@@ -152,7 +151,7 @@ impl Node {
                     Some(self.msg_id),
                     input.get_message_id(),
                     Payload::SendOk {
-                        offset: self.state.add_message(key, *msg, &self.key_value_store),
+                        offset: self.state.add_message(key, *msg, &self.key_value_store,self.msg_id), 
                     },
                 );
                 let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);

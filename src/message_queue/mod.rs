@@ -93,7 +93,7 @@ impl Default for MessageQueue {
                 }
                 // this will gossip ony after 50 miliseconds
                 // now we will check of we have gossiped small time before
-                if last_gossiped.elapsed() > Duration::from_millis(0) {
+                if last_gossiped.elapsed() > Duration::from_millis(1) {    
                     let mut already_sent_latest_to = HashSet::<String>::new();
                     while let Some(message) = gossip_queue.pop_back() {
                         if already_sent_latest_to.contains(message.get_dst()) {

@@ -1,5 +1,5 @@
 use std::{
-    io::{self, stdin, BufRead},
+    io::{self, stdin},
     sync::mpsc,
     thread,
 };
@@ -26,7 +26,6 @@ fn main() -> Result<(), io::Error> {
             let message = message.expect("error while trying to parse message");
             match message.get_src() {
                 "lin-kv" => {
-                    eprintln!("{:?}",message); 
                     // this message will go to the lin_kv thread
                     link_kv_sender
                         .send(message)

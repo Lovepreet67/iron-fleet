@@ -28,7 +28,7 @@ pub struct NodeState {
     topics: HashMap<String, Topic>,
 }
 
-fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {
+fn get_valid_offset(key: &str, key_value_store: &LinkKv,initial:usize) -> usize {
     loop {
         // first we will try to get the offset
         match key_value_store.get(key.to_string()) {
@@ -45,8 +45,18 @@ fn get_valid_offset(key: &str, key_value_store: &LinkKv) -> usize {
                 }
             }
             LinkKVResponse::KeyNotFound => {
-                key_value_store.set(key.to_string(), 0);
-                return 0;
+                key_value_store.set(key.to_string(), initial);
+                match key_value_store.compare_and_set(key.to_string(), initial, initial + 1)
+                {
+                    LinkKVResponse::Success => {
+                        // if this is success ww have secured the index and now we can use it
+                        return initial + 1; 
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+
             }
             _ => {
                 continue;
@@ -67,8 +77,8 @@ impl NodeState {
             }
         }
     }
-    pub fn add_message(&mut self, key: &str, value: i32, key_value_store: &LinkKv) -> usize {
-        let valid_offset = get_valid_offset(key, key_value_store);
+    pub fn add_message(&mut self, key: &str, value: i32, key_value_store: &LinkKv,msg_id:usize) -> usize {
+        let valid_offset = get_valid_offset(key, key_value_store,msg_id); 
         // first we will get the offset from the for the value
         if let Some(curr_topic) = self.topics.get_mut(key) {
             curr_topic.messages.insert(valid_offset, value);
