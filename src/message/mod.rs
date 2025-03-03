@@ -4,6 +4,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::node_state::NodeState;
 
+#[derive(Debug, Serialize, Deserialize,Clone)] 
+#[serde(rename_all = "snake_case")]
+pub enum TxnType{
+    R,
+    W, 
+}
+
+
+#[derive(Debug,Deserialize,Serialize,Clone)] 
+pub struct TxnEntry(pub TxnType,pub i32,pub Option<i32>);    
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message {
     src: String,
@@ -84,50 +95,11 @@ pub enum Payload {
         received_state: NodeState,
     },
     GossipOk,
-    // for kafka
-    Send {
-        key: String,
-        msg: i32,
+    // for transactions
+    Txn {
+        txn:Vec<TxnEntry> 
     },
-    SendOk {
-        offset: usize,
-    },
-    Poll {
-        offsets: HashMap<String, usize>,
-    },
-    PollOk {
-        msgs: HashMap<String, Vec<Vec<i32>>>,
-    },
-    CommitOffsets {
-        offsets: HashMap<String, usize>,
-    },
-    CommitOffsetsOk,
-    ListCommittedOffsets {
-        keys: Vec<String>,
-    },
-    ListCommittedOffsetsOk {
-        offsets: HashMap<String, usize>,
-    },
-    // for lin-kv
-    Read {
-        key: String,
-    },
-    ReadOk {
-        value: usize,
-    },
-    Write {
-        key: String,
-        value: usize,
-    },
-    WriteOk,
-    Cas {
-        key: String,
-        from: usize,
-        to: usize,
-    },
-    CasOk,
-    Error {
-        code: usize,
-        text: String,
-    },
-}
+    TxnOk{
+        txn:Vec<TxnEntry>
+    }
+} 

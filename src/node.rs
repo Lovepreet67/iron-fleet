@@ -1,5 +1,4 @@
 use crate::{
-    link_kv::LinkKv,
     message::{Body, Message, Payload},
     message_queue,
     node_state::NodeState,
@@ -17,12 +16,11 @@ pub struct Node {
     msg_id: usize,
     topology: HashMap<String, Vec<String>>,
     message_queue: MessageQueue,
-    key_value_store: LinkKv,
     state: NodeState,
 }
 
 impl Node {
-    pub fn new(message_queue: MessageQueue, key_value_store: LinkKv) -> Self {
+    pub fn new(message_queue: MessageQueue) -> Self {
         Node {
             name: "no_name".to_string(),
             connected_to: vec![],
@@ -30,7 +28,6 @@ impl Node {
             topology: HashMap::new(),
             message_queue,
             state: NodeState::default(),
-            key_value_store,
         }
     }
     pub fn step(&mut self, input: Message) -> Result<(), Error> {
@@ -102,7 +99,6 @@ impl Node {
                     body,
                 );
                 self.msg_id += 1;
-                self.key_value_store.set_node_name(node_id.to_string());
                 Some(reply)
             }
             Payload::InitOk => None,
@@ -146,58 +142,17 @@ impl Node {
                 self.msg_id += 1;
                 Some(reply)
             }
-            Payload::Send { key, msg } => {
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::SendOk {
-                        offset: self.state.add_message(key, *msg, &self.key_value_store,self.msg_id), 
-                    },
+            Payload::GossipOk => None,
+            Payload::Txn { txn }=>{
+                let body = Body::new(Some(self.msg_id), input.get_message_id(), Payload::TxnOk { txn:self.state.process_transaction(txn.to_vec()) });   
+                let reply = Message::new(
+                    input.get_dst().to_string(),
+                    input.get_src().to_string(),
+                    body,
                 );
-                let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
-                self.gossip(input.get_src());
                 self.msg_id += 1;
                 Some(reply)
             }
-            Payload::SendOk { offset: _ } => None,
-            Payload::Poll { offsets } => {
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::PollOk {
-                        msgs: self.state.poll(offsets),
-                    },
-                );
-                let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
-                Some(reply)
-            }
-            Payload::PollOk { msgs: _ } => None,
-            Payload::CommitOffsets { offsets } => {
-                self.state.commit_offsets(input.get_src(), offsets);
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::CommitOffsetsOk,
-                );
-                let reply = Message::new(self.name.to_string(), input.get_src().to_string(), body);
-                self.gossip(input.get_src());
-                Some(reply)
-            }
-            Payload::CommitOffsetsOk => None,
-            Payload::ListCommittedOffsets { keys } => {
-                let body = Body::new(
-                    Some(self.msg_id),
-                    input.get_message_id(),
-                    Payload::ListCommittedOffsetsOk {
-                        offsets: self.state.get_offsets(input.get_src(), keys),
-                    },
-                );
-                let reply = Message::new(self.name.clone(), input.get_src().to_string(), body);
-                Some(reply)
-            }
-            Payload::ListCommittedOffsetsOk { offsets: _ } => None,
-
-            Payload::GossipOk => None,
             _ => None,
         }
     }

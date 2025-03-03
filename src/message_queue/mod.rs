@@ -35,6 +35,7 @@ impl Default for MessageQueue {
             let mut reply_ids = HashSet::<usize>::new();
             let mut last_gossiped = Instant::now();
             loop {
+                thread::sleep(Duration::from_secs(1));  
                 let event = match rx.try_recv() {
                     Ok(event) => event,
                     Err(_) => Event::None,
